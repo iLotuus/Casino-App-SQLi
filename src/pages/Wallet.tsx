@@ -19,6 +19,21 @@ const Wallet = () => {
   // Use user.balance if available, otherwise 0
   const balance = user?.balance || 0;
 
+  // Fetch transactions from backend
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      try {
+        const response = await api.get('/transactions');
+        setTransactions(response.data);
+      } catch (error) {
+        console.error('Error fetching transactions:', error);
+      }
+    };
+    if (user) {
+      fetchTransactions();
+    }
+  }, [user]);
+
   const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -27,14 +42,9 @@ const Wallet = () => {
       // Mostrar el mensaje del backend (útil para exfiltración SQL)
       toast.success(response.data.message || 'Depósito procesado exitosamente');
       setDepositAmount("");
-      // Add to local transactions list for demo purposes, or fetch from API if endpoint existed
-      setTransactions(prev => [{
-        id: Date.now(),
-        type: "deposit",
-        amount: parseFloat(depositAmount) || 0,
-        date: new Date().toISOString().split('T')[0],
-        description: "Depósito"
-      }, ...prev]);
+      // Refetch transactions
+      const txResponse = await api.get('/transactions');
+      setTransactions(txResponse.data);
     } catch (error: any) {
       toast.error(error.response?.data?.error || "Error al depositar");
     }
@@ -48,13 +58,9 @@ const Wallet = () => {
       // Mostrar el mensaje del backend (útil para exfiltración SQL)
       toast.success(response.data.message || 'Retiro solicitado exitosamente');
       setWithdrawAmount("");
-      setTransactions(prev => [{
-        id: Date.now(),
-        type: "withdraw",
-        amount: parseFloat(withdrawAmount) || 0,
-        date: new Date().toISOString().split('T')[0],
-        description: "Retiro"
-      }, ...prev]);
+      // Refetch transactions
+      const txResponse = await api.get('/transactions');
+      setTransactions(txResponse.data);
     } catch (error: any) {
       toast.error(error.response?.data?.error || "Error al retirar");
     }
@@ -166,11 +172,11 @@ const Wallet = () => {
               <CardDescription>Tus últimos movimientos</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
                 {transactions.length === 0 ? (
                   <p className="text-center text-muted-foreground">No hay transacciones recientes</p>
                 ) : (
-                  transactions.map((transaction) => (
+                  transactions.slice(0, 10).map((transaction) => (
                     <div key={transaction.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                       <div className="flex items-center gap-3">
                         <div className={`p-2 rounded-full ${transaction.type === 'deposit' ? 'bg-secondary/20' :
@@ -183,12 +189,12 @@ const Wallet = () => {
                         </div>
                         <div>
                           <p className="font-medium text-foreground">{transaction.description}</p>
-                          <p className="text-xs text-muted-foreground">{transaction.date}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(transaction.date).toLocaleDateString()}</p>
                         </div>
                       </div>
                       <p className={`font-bold ${transaction.type === 'withdraw' ? 'text-primary' : 'text-casino-gold'
                         }`}>
-                        {transaction.type === 'withdraw' ? '-' : '+'}${transaction.amount.toFixed(2)}
+                        {transaction.type === 'withdraw' ? '-' : '+'}${parseFloat(transaction.amount).toFixed(2)}
                       </p>
                     </div>
                   ))

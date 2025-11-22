@@ -108,8 +108,9 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
     // ¡Esto es extremadamente peligroso!
     // USO DIRECTO DE 'amount' SIN parseFloat() para permitir inyección SQL
     const updateQuery = `UPDATE users SET balance = balance + ${amount} WHERE id = ${req.user.id}`;
-    const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'deposit', 100, NOW(), 'Deposit')`;
-    const selectQuery = `SELECT balance, username FROM users WHERE id = ${req.user.id}`;
+    const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'deposit', ${amount}, NOW(), 'Deposit')`;
+    const selectQuery = `SELECT balance FROM users WHERE id = ${req.user.id}`;
+    const getTransactionQuery = `SELECT amount FROM transactions WHERE user_id = ${req.user.id} ORDER BY id DESC LIMIT 1`;
 
     db.serialize(() => {
         // Se ejecutan las consultas construidas de forma insegura.
@@ -118,14 +119,28 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
 
         db.get(selectQuery, (err, row) => {
             const balance = row?.balance ?? 0;
-            const username = row?.username || '';
 
-            // Mostrar username en el mensaje - permite exfiltración via UPDATE username
-            const message = `Depósito exitoso. Usuario: ${username}`;
-            res.json({ balance: balance, message: message });
+            // Leer amount de la transacción para exfiltración de datos
+            db.get(getTransactionQuery, (err, transaction) => {
+                const txAmount = transaction?.amount || amount;
+                // Si es numérico, mostrar como dinero; si no, es exfiltración
+                const isNumeric = !isNaN(parseFloat(amount)) && isFinite(amount);
+                const message = isNumeric
+                    ? `Depósito exitoso de $${amount}`
+                    : `Depósito exitoso de ${txAmount}`;
+                res.json({ balance: balance, message: message });
+            });
         });
     });
     // FIN DE LA VULNERABILIDAD
+});
+
+// Get User Transactions
+app.get('/api/transactions', authenticateToken, (req, res) => {
+    db.all(`SELECT * FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 10`, [req.user.id], (err, transactions) => {
+        if (err) return res.status(500).json({ error: 'Server error' });
+        res.json(transactions || []);
+    });
 });
 
 // Withdraw
