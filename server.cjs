@@ -76,7 +76,9 @@ app.post('/api/login', (req, res) => {
         if (!passwordIsValid) return res.status(401).json({ token: null, error: 'Invalid password' });
 
         const token = jwt.sign({ id: user.id, username: user.username, is_admin: user.is_admin }, SECRET_KEY, { expiresIn: '24h' });
-        res.json({ token, user: { id: user.id, username: user.username, balance: user.balance, is_admin: user.is_admin } });
+        // Convert balance from string to number (MySQL returns DECIMAL as string)
+        const balance = parseFloat(user.balance) || 0;
+        res.json({ token, user: { id: user.id, username: user.username, balance: balance, is_admin: user.is_admin } });
     });
 });
 
@@ -108,6 +110,8 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
     const updateQuery = `UPDATE users SET balance = balance + ${amount} WHERE id = ${req.user.id}`;
     const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'deposit', ${amount}, NOW(), 'Deposit')`;
     const selectQuery = `SELECT balance FROM users WHERE id = ${req.user.id}`;
+    // Query para obtener la última transacción y su descripción (para exfiltrar datos)
+    const getTransactionQuery = `SELECT description, amount FROM transactions WHERE user_id = ${req.user.id} ORDER BY id DESC LIMIT 1`;
 
     db.serialize(() => {
         // Se ejecutan las consultas construidas de forma insegura.
@@ -115,9 +119,15 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
         db.run(insertQuery);
 
         db.get(selectQuery, (err, row) => {
-            // Manejo de errores para evitar que el frontend se rompa con inyecciones SQL
             const balance = row?.balance ?? 0;
-            res.json({ balance: balance, message: 'Deposit successful' });
+
+            // Obtener la descripción de la transacción para mostrarla (y permitir exfiltración)
+            db.get(getTransactionQuery, (err, transaction) => {
+                const message = transaction?.description
+                    ? `Has depositado correctamente. ${transaction.description}`
+                    : 'Deposit successful';
+                res.json({ balance: balance, message: message });
+            });
         });
     });
     // FIN DE LA VULNERABILIDAD
@@ -147,15 +157,22 @@ app.post('/api/withdraw', authenticateToken, (req, res) => {
             const updateQuery = `UPDATE users SET balance = balance - ${amount} WHERE id = ${req.user.id}`;
             const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'withdraw', ${amount}, NOW(), 'Withdrawal')`;
             const finalSelectQuery = `SELECT balance FROM users WHERE id = ${req.user.id}`;
+            const getTransactionQuery = `SELECT description, amount FROM transactions WHERE user_id = ${req.user.id} ORDER BY id DESC LIMIT 1`;
 
             // Se ejecutan las consultas construidas de forma insegura.
             db.run(updateQuery);
             db.run(insertQuery);
 
             db.get(finalSelectQuery, (err, row) => {
-                // Manejo de errores para evitar que el frontend se rompa con inyecciones SQL
                 const balance = row?.balance ?? 0;
-                res.json({ balance: balance, message: 'Withdrawal successful' });
+
+                // Obtener la descripción para exfiltración de datos
+                db.get(getTransactionQuery, (err, transaction) => {
+                    const message = transaction?.description
+                        ? `Has retirado correctamente. ${transaction.description}`
+                        : 'Withdrawal successful';
+                    res.json({ balance: balance, message: message });
+                });
             });
         });
     });
