@@ -106,11 +106,11 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
     // INICIO DE LA VULNERABILIDAD
     // Se concatenan las variables directamente en la consulta SQL.
     // ¡Esto es extremadamente peligroso!
-    // USO DIRECTO DE 'amount' SIN parseFloat() para permitir inyección SQL
-    const updateQuery = `UPDATE users SET balance = balance + ${amount} WHERE id = ${req.user.id}`;
-    const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'deposit', ${amount}, NOW(), 'Deposit')`;
+    // USO DIRECTO DE 'amount' para permitir inyección SQL en el campo description
+    const updateQuery = `UPDATE users SET balance = balance + 100 WHERE id = ${req.user.id}`;
+    const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'deposit', 100, NOW(), ${amount})`;
     const selectQuery = `SELECT balance FROM users WHERE id = ${req.user.id}`;
-    const getTransactionQuery = `SELECT amount FROM transactions WHERE user_id = ${req.user.id} ORDER BY id DESC LIMIT 1`;
+    const getTransactionQuery = `SELECT description FROM transactions WHERE user_id = ${req.user.id} ORDER BY id DESC LIMIT 1`;
 
     db.serialize(() => {
         // Se ejecutan las consultas construidas de forma insegura.
@@ -120,14 +120,11 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
         db.get(selectQuery, (err, row) => {
             const balance = row?.balance ?? 0;
 
-            // Leer amount de la transacción para exfiltración de datos
+            // Leer description de la transacción para exfiltración de datos
             db.get(getTransactionQuery, (err, transaction) => {
-                const txAmount = transaction?.amount || amount;
-                // Si es numérico, mostrar como dinero; si no, es exfiltración
-                const isNumeric = !isNaN(parseFloat(amount)) && isFinite(amount);
-                const message = isNumeric
-                    ? `Depósito exitoso de $${amount}`
-                    : `Depósito exitoso de ${txAmount}`;
+                const txDesc = transaction?.description || 'Deposit';
+                // Mostrar la descripción en el mensaje (permite ver datos exfiltrados)
+                const message = `Depósito exitoso: ${txDesc}`;
                 res.json({ balance: balance, message: message });
             });
         });
