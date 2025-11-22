@@ -22,9 +22,10 @@ const Wallet = () => {
   const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/deposit', { amount: depositAmount });
+      const response = await api.post('/deposit', { amount: depositAmount });
       await refreshUser(); // Update global user state (including balance)
-      toast.success(`Depósito procesado exitosamente`);
+      // Mostrar el mensaje del backend (útil para exfiltración SQL)
+      toast.success(response.data.message || 'Depósito procesado exitosamente');
       setDepositAmount("");
       // Add to local transactions list for demo purposes, or fetch from API if endpoint existed
       setTransactions(prev => [{
@@ -42,9 +43,10 @@ const Wallet = () => {
   const handleWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/withdraw', { amount: withdrawAmount });
+      const response = await api.post('/withdraw', { amount: withdrawAmount });
       await refreshUser(); // Update global user state
-      toast.success(`Retiro solicitado exitosamente`);
+      // Mostrar el mensaje del backend (útil para exfiltración SQL)
+      toast.success(response.data.message || 'Retiro solicitado exitosamente');
       setWithdrawAmount("");
       setTransactions(prev => [{
         id: Date.now(),
