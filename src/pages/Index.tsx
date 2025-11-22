@@ -12,10 +12,37 @@ import { useEffect, useState } from "react";
 
 const Index = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [slotSymbol, setSlotSymbol] = useState("7️⃣");
+
+  const casinoSymbols = ["🍒", "🍋", "🔔", "💎", "7️⃣", "⭐"];
 
   useEffect(() => {
     const token = localStorage.getItem('token');
     setIsLoggedIn(!!token);
+  }, []);
+
+  useEffect(() => {
+    const rotateSymbol = () => {
+      setSlotSymbol(prev => {
+        const currentIndex = casinoSymbols.indexOf(prev);
+        const nextIndex = (currentIndex + 1) % casinoSymbols.length;
+        const nextSymbol = casinoSymbols[nextIndex];
+
+        // Si llegamos a 7️⃣ (jackpot), pausar por 5 segundos
+        if (nextSymbol === "7️⃣") {
+          setTimeout(rotateSymbol, 5000); // Espera 5 segundos
+        } else {
+          setTimeout(rotateSymbol, 300); // Rotación normal
+        }
+
+        return nextSymbol;
+      });
+    };
+
+    // Iniciar la primera rotación
+    const initialTimeout = setTimeout(rotateSymbol, 300);
+
+    return () => clearTimeout(initialTimeout);
   }, []);
 
   const games = [
@@ -86,7 +113,7 @@ const Index = () => {
         <div className="relative container mx-auto px-4 py-20 md:py-32">
           <div className="max-w-3xl">
             <h1 className="text-5xl md:text-7xl font-bold mb-6 text-foreground">
-              Bienvenido a <span className="text-gold-glow animate-glow">Jackpotito 777</span>
+              Bienvenido a <span className="text-gold-glow animate-glow">Jackpotito <span className="inline-block transition-all duration-200">{slotSymbol === "7️⃣" ? "777" : `${slotSymbol}${slotSymbol}${slotSymbol}`}</span></span>
             </h1>
             <p className="text-xl md:text-2xl text-muted-foreground mb-8">
               El casino online más emocionante. Juega, gana y disfruta de los mejores juegos con premios increíbles.

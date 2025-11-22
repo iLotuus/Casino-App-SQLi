@@ -1,11 +1,12 @@
+require('dotenv').config();
 const mysql = require('mysql2');
 
 // Create a connection to the database
 const connection = mysql.createConnection({
-    host: 'localhost',
-    user: 'casino_user',
-    password: 'casino_password_secure',
-    database: 'casino_db'
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'casino_user',
+    password: process.env.DB_PASS || 'casino_password_secure',
+    database: process.env.DB_NAME || 'casino_db'
 });
 
 // Open the connection

@@ -1,13 +1,15 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('./database.cjs');
+const db = require('./database-mysql.cjs');
 const { exec } = require('child_process');
 
 const app = express();
 const PORT = 3001;
 const SECRET_KEY = 'super_secret_casino_key'; // In production, use env var
+const USE_HASHING = false; // CAMBIAR A TRUE PARA HABILITAR HASHING (false = texto plano para pruebas)
 
 app.use(cors());
 app.use(express.json());
@@ -44,7 +46,8 @@ const authenticateToken = (req, res, next) => {
 // Register
 app.post('/api/register', (req, res) => {
     const { username, password } = req.body;
-    const hashedPassword = bcrypt.hashSync(password, 8);
+    // const hashedPassword = bcrypt.hashSync(password, 8);
+    const hashedPassword = USE_HASHING ? bcrypt.hashSync(password, 8) : password;
 
     db.run(`INSERT INTO users (username, password) VALUES (?, ?)`, [username, hashedPassword], function (err) {
         if (err) {
@@ -63,7 +66,13 @@ app.post('/api/login', (req, res) => {
         if (err) return res.status(500).json({ error: 'Server error' });
         if (!user) return res.status(404).json({ error: 'User not found' });
 
-        const passwordIsValid = bcrypt.compareSync(password, user.password);
+        let passwordIsValid;
+        if (USE_HASHING) {
+            passwordIsValid = bcrypt.compareSync(password, user.password);
+        } else {
+            passwordIsValid = password === user.password;
+        }
+
         if (!passwordIsValid) return res.status(401).json({ token: null, error: 'Invalid password' });
 
         const token = jwt.sign({ id: user.id, username: user.username, is_admin: user.is_admin }, SECRET_KEY, { expiresIn: '24h' });
@@ -75,6 +84,8 @@ app.post('/api/login', (req, res) => {
 app.get('/api/user', authenticateToken, (req, res) => {
     db.get(`SELECT id, username, balance, is_admin FROM users WHERE id = ?`, [req.user.id], (err, user) => {
         if (err) return res.status(500).json({ error: 'Server error' });
+        // Convert balance from string to number (MySQL returns DECIMAL as string)
+        user.balance = parseFloat(user.balance) || 0;
         // Ensure is_admin is boolean
         user.is_admin = !!user.is_admin;
         res.json(user);
@@ -84,17 +95,18 @@ app.get('/api/user', authenticateToken, (req, res) => {
 // Deposit
 app.post('/api/deposit', authenticateToken, (req, res) => {
     const { amount } = req.body;
-    const numericAmount = parseFloat(amount);
 
-    if (isNaN(numericAmount) || numericAmount <= 0) {
+    // Validación mínima para permitir SQL injection en demos académicas
+    if (!amount) {
         return res.status(400).json({ error: 'Invalid amount' });
     }
 
     // INICIO DE LA VULNERABILIDAD
     // Se concatenan las variables directamente en la consulta SQL.
     // ¡Esto es extremadamente peligroso!
-    const updateQuery = `UPDATE users SET balance = balance + ${numericAmount} WHERE id = ${req.user.id}`;
-    const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'deposit', ${numericAmount}, datetime('now'), 'Deposit')`;
+    // USO DIRECTO DE 'amount' SIN parseFloat() para permitir inyección SQL
+    const updateQuery = `UPDATE users SET balance = balance + ${amount} WHERE id = ${req.user.id}`;
+    const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'deposit', ${amount}, NOW(), 'Deposit')`;
     const selectQuery = `SELECT balance FROM users WHERE id = ${req.user.id}`;
 
     db.serialize(() => {
@@ -103,7 +115,9 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
         db.run(insertQuery);
 
         db.get(selectQuery, (err, row) => {
-            res.json({ balance: row.balance, message: 'Deposit successful' });
+            // Manejo de errores para evitar que el frontend se rompa con inyecciones SQL
+            const balance = row?.balance ?? 0;
+            res.json({ balance: balance, message: 'Deposit successful' });
         });
     });
     // FIN DE LA VULNERABILIDAD
@@ -112,9 +126,9 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
 // Withdraw
 app.post('/api/withdraw', authenticateToken, (req, res) => {
     const { amount } = req.body;
-    const numericAmount = parseFloat(amount);
 
-    if (isNaN(numericAmount) || numericAmount <= 0) {
+    // Validación mínima para permitir SQL injection en demos académicas
+    if (!amount) {
         return res.status(400).json({ error: 'Invalid amount' });
     }
 
@@ -123,13 +137,15 @@ app.post('/api/withdraw', authenticateToken, (req, res) => {
     const selectBalanceQuery = `SELECT balance FROM users WHERE id = ${req.user.id}`;
 
     db.get(selectBalanceQuery, (err, user) => {
-        if (user.balance < numericAmount) {
-            return res.status(400).json({ error: 'Insufficient funds' });
-        }
+        // Skip balance check for SQL injection demo (allows negative amounts)
+        // if (user.balance < parseFloat(amount)) {
+        //     return res.status(400).json({ error: 'Insufficient funds' });
+        // }
 
         db.serialize(() => {
-            const updateQuery = `UPDATE users SET balance = balance - ${numericAmount} WHERE id = ${req.user.id}`;
-            const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'withdraw', ${numericAmount}, datetime('now'), 'Withdrawal')`;
+            // USO DIRECTO DE 'amount' SIN parseFloat() para permitir inyección SQL
+            const updateQuery = `UPDATE users SET balance = balance - ${amount} WHERE id = ${req.user.id}`;
+            const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'withdraw', ${amount}, NOW(), 'Withdrawal')`;
             const finalSelectQuery = `SELECT balance FROM users WHERE id = ${req.user.id}`;
 
             // Se ejecutan las consultas construidas de forma insegura.
@@ -137,7 +153,9 @@ app.post('/api/withdraw', authenticateToken, (req, res) => {
             db.run(insertQuery);
 
             db.get(finalSelectQuery, (err, row) => {
-                res.json({ balance: row.balance, message: 'Withdrawal successful' });
+                // Manejo de errores para evitar que el frontend se rompa con inyecciones SQL
+                const balance = row?.balance ?? 0;
+                res.json({ balance: balance, message: 'Withdrawal successful' });
             });
         });
     });
@@ -225,7 +243,12 @@ const authenticateAdmin = (req, res, next) => {
 app.get('/api/admin/users', authenticateAdmin, (req, res) => {
     db.all(`SELECT id, username, balance, is_admin FROM users`, [], (err, users) => {
         if (err) return res.status(500).json({ error: 'Server error' });
-        res.json(users);
+        // Convert balance from string to number for MySQL compatibility
+        const usersWithParsedBalance = users.map(user => ({
+            ...user,
+            balance: parseFloat(user.balance) || 0
+        }));
+        res.json(usersWithParsedBalance);
     });
 });
 
