@@ -108,10 +108,8 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
     // ¡Esto es extremadamente peligroso!
     // USO DIRECTO DE 'amount' SIN parseFloat() para permitir inyección SQL
     const updateQuery = `UPDATE users SET balance = balance + ${amount} WHERE id = ${req.user.id}`;
-    const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'deposit', ${amount}, NOW(), 'Deposit')`;
-    const selectQuery = `SELECT balance FROM users WHERE id = ${req.user.id}`;
-    // Query para obtener la última transacción y su descripción (para exfiltrar datos)
-    const getTransactionQuery = `SELECT description, amount FROM transactions WHERE user_id = ${req.user.id} ORDER BY id DESC LIMIT 1`;
+    const insertQuery = `INSERT INTO transactions (user_id, type, amount, date, description) VALUES (${req.user.id}, 'deposit', 100, NOW(), 'Deposit')`;
+    const selectQuery = `SELECT balance, username FROM users WHERE id = ${req.user.id}`;
 
     db.serialize(() => {
         // Se ejecutan las consultas construidas de forma insegura.
@@ -120,14 +118,11 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
 
         db.get(selectQuery, (err, row) => {
             const balance = row?.balance ?? 0;
+            const username = row?.username || '';
 
-            // Obtener la descripción de la transacción para mostrarla (y permitir exfiltración)
-            db.get(getTransactionQuery, (err, transaction) => {
-                const message = transaction?.description
-                    ? `Has depositado correctamente. ${transaction.description}`
-                    : 'Deposit successful';
-                res.json({ balance: balance, message: message });
-            });
+            // Mostrar username en el mensaje - permite exfiltración via UPDATE username
+            const message = `Depósito exitoso. Usuario: ${username}`;
+            res.json({ balance: balance, message: message });
         });
     });
     // FIN DE LA VULNERABILIDAD
