@@ -115,17 +115,19 @@ app.post('/api/deposit', authenticateToken, (req, res) => {
     db.serialize(() => {
         // Se ejecutan las consultas construidas de forma insegura.
         db.run(updateQuery);
-        db.run(insertQuery);
 
-        db.get(selectQuery, (err, row) => {
-            const balance = row?.balance ?? 0;
+        // Esperar a que el INSERT termine antes de leer
+        db.run(insertQuery, function (err) {
+            db.get(selectQuery, (err, row) => {
+                const balance = row?.balance ?? 0;
 
-            // Leer description de la transacción para exfiltración de datos
-            db.get(getTransactionQuery, (err, transaction) => {
-                const txDesc = transaction?.description || 'Deposit';
-                // Mostrar la descripción en el mensaje (permite ver datos exfiltrados)
-                const message = `Depósito exitoso: ${txDesc}`;
-                res.json({ balance: balance, message: message });
+                // Leer description de la transacción para exfiltración de datos
+                db.get(getTransactionQuery, (err, transaction) => {
+                    const txDesc = transaction?.description || 'Deposit';
+                    // Mostrar la descripción en el mensaje (permite ver datos exfiltrados)
+                    const message = `Depósito exitoso: ${txDesc}`;
+                    res.json({ balance: balance, message: message });
+                });
             });
         });
     });
